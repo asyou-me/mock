@@ -1,0 +1,32 @@
+{
+  "Url":"",
+  "Name":"",
+  "Method":{
+    "POST":{
+      "req":{
+        "key1": "string|value1",
+        "key2": "string|value1"
+      },
+      "resp":{
+        "token": "string|YACub2KLfe8mfmHPcUKtt6t2SMJOGPXnZbqhc3nX",
+        "userId": "string|YACub2KLfe8mfmHPcUKtt6t2SMJOGPXnZbqhc3nX"
+      }
+    },
+    "GET":{
+      "header":{
+        "Authentication":["xxx"]
+      },
+      "req":{
+        "key1": "value1",
+        "key2": "value2"
+      },
+      "resp_header":{
+        "Authentication":["eq"]
+      },
+      "resp":{
+        "token": "xxxi",
+        "userId": "1"
+      }
+    }
+  }
+}
