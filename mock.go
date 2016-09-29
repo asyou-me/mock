@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -49,7 +50,6 @@ func main() {
 		cache: map[string][]byte{},
 	}
 
-	fmt.Println("path:", path)
 	// http 服务对象
 	server := http.Server{
 		Addr:        *httpAddr,
@@ -82,12 +82,13 @@ func (f *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // MockAPI 接口模拟函数
 func (f *httpHandler) MockAPI(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.String()
+	path := r.URL.Path
 	method := r.Method
 	//cookie := r.Cookies()
 	data, err := readFile(f.dir + path + ".json")
 	if err != nil {
 		w.Write([]byte(err.Error()))
+		return
 	}
 
 	end := new(EndPoint)
@@ -99,12 +100,27 @@ func (f *httpHandler) MockAPI(w http.ResponseWriter, r *http.Request) {
 	context, ok := end.Method[method]
 	if !ok {
 		w.Write([]byte("方法不存在"))
+		return
 	}
 
 	err = checkHeader(r, context.Header)
-	fmt.Println(err)
-	//checkQuery()
-	//checkReq()
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+
+	err = checkQuery(r, context.Query)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+
+	err = checkReq(r, context.Req)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+
 	writeResp(w, context.RespHeader, context.Resp)
 }
 
@@ -115,15 +131,112 @@ func checkHeader(r *http.Request, rules map[string][]string) error {
 		hkLen := len(headers[k])
 		for i := 0; i < vLen; i++ {
 			if rule[i] != "" && i >= hkLen {
-				return errors.New("缺少 headers:" + k + "[" + fmt.Sprint(i) + "]")
+				return errors.New("缺少 headers: " + k + "[" + fmt.Sprint(i) + "]")
 			}
-			reg := regexp.MustCompile(rule[i])
+
+			reg := regexp.MustCompile("^" + rule[i] + "$")
 			ok := reg.Match([]byte(headers[k][i]))
 			if !ok {
-				return errors.New("headers:" + k + "[" + fmt.Sprint(i) + "]无法通过校验,规则 -> regexp[" + rule[i] + "]")
+				return errors.New("headers: " + k + "[" + fmt.Sprint(i) + "]无法通过校验" /*,规则 -> regexp[" + "^" + rule[i] + "$" + "]"*/)
 			}
 		}
 	}
+	return nil
+}
+
+func checkQuery(r *http.Request, rules map[string][]string) error {
+	querys := r.URL.Query()
+	for k, rule := range rules {
+		vLen := len(rule)
+		hkLen := len(querys[k])
+		for i := 0; i < vLen; i++ {
+			if rule[i] != "" && i >= hkLen {
+				return errors.New("缺少 url.querys: " + k + "[" + fmt.Sprint(i) + "]")
+			}
+
+			reg := regexp.MustCompile("^" + rule[i] + "$")
+			ok := reg.Match([]byte(querys[k][i]))
+			if !ok {
+				return errors.New("url.querys: " + k + "[" + fmt.Sprint(i) + "]无法通过校验" /*,规则 -> regexp[" + "^" + rule[i] + "$" + "]"*/)
+			}
+		}
+	}
+	return nil
+}
+
+func checkReq(r *http.Request, rules interface{}) error {
+	buf, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+
+	switch getType(rules) {
+	case "{}":
+		obj := map[string]interface{}{}
+		err = json.Unmarshal(buf, &obj)
+		if err != nil {
+			return errors.New("body 必须为json类型 ")
+		}
+		return compareStruct(obj, rules.(map[string]interface{}), "")
+	case "[]":
+		obj := []interface{}{}
+		err = json.Unmarshal(buf, &obj)
+		if err != nil {
+			return errors.New("body 必须为json类型 ")
+		}
+		return compareSlice(obj, rules.([]interface{}), "")
+	case "string":
+		rule := rules.(string)
+		index := strings.Index(rule, "|")
+		if index == -1 {
+			return errors.New("规则定义出错")
+		}
+		reg := regexp.MustCompile("^" + string(rule[:index]) + "$")
+		ok := reg.Match(buf)
+		if !ok {
+			return errors.New("body 无法通过校验" /*,规则 -> regexp[" + "^" + rule[i] + "$" + "]"*/)
+		}
+	}
+	return nil
+}
+
+func compareStruct(body map[string]interface{}, rules map[string]interface{}, path string) error {
+	for k, v := range rules {
+		switch getType(v) {
+		case "{}":
+			b, err := body[k].(map[string]interface{})
+			if !err {
+				return errors.New(path + k + " 必须为json类型 ")
+			}
+			return compareStruct(b, v.(map[string]interface{}), path+k)
+		case "[]":
+			b, err := body[k].([]interface{})
+			if !err {
+				return errors.New(path + k + " 必须为数组类型 ")
+			}
+			return compareSlice(b, v.([]interface{}), "")
+		case "string":
+			rule := v.(string)
+			index := strings.Index(rule, "|")
+			if index == -1 {
+				return errors.New("规则定义出错")
+			}
+			reg := regexp.MustCompile("^" + rule[index+1:] + "$")
+			ok := reg.Match([]byte(fmt.Sprint(body[k])))
+			if !ok {
+				return errors.New(path + k + " 无法通过校验" /*,规则 -> regexp[" + "^" + rule[i] + "$" + "]"*/)
+			}
+		}
+	}
+	return nil
+}
+
+func compareSlice(body []interface{}, rules []interface{}, path string) error {
+	return nil
+}
+
+func compareEnd(body interface{}, rules interface{}, path string) error {
+
 	return nil
 }
 
@@ -143,6 +256,15 @@ func writeResp(w http.ResponseWriter, respHeader map[string][]string, resp inter
 		header.Set("Content-Type", "text/html")
 		w.Write([]byte(fmt.Sprint(data)))
 	}
+}
+
+// 写入错误
+func writeErr(w http.ResponseWriter, err error) {
+	header := w.Header()
+	// 设置跨域请求
+	header.Set("Access-Control-Allow-Origin", "*")
+	header.Set("Content-Type", "application/json;charset=utf-8")
+	w.Write([]byte(`{"msg":"` + err.Error() + `"}`))
 }
 
 // 获取字符串后缀,后缀长度不能超过8
@@ -197,16 +319,16 @@ type Rule struct {
 // 获取的类型
 func getType(data interface{}) string {
 	switch data.(type) {
+	case map[string]interface{}:
+		return "{}"
+	case []interface{}:
+		return "[]"
 	case string:
 		return "string"
 	case int8, int16, int, int32, int64:
 		return "int"
 	case float32, float64:
 		return "float"
-	case map[string]interface{}:
-		return "map[string]interface{}"
-	case []interface{}:
-		return "[]interface{}"
 	default:
 		return "string"
 	}

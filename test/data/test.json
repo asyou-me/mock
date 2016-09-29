@@ -8,13 +8,16 @@
         "key2": "string|value1"
       },
       "resp":{
-        "token": "string|YACub2KLfe8mfmHPcUKtt6t2SMJOGPXnZbqhc3nX",
-        "userId": "string|YACub2KLfe8mfmHPcUKtt6t2SMJOGPXnZbqhc3nX"
+        "token": "YACub2KLfe8mfmHPcUKtt6t2SMJOGPXnZbqhc3nX",
+        "userId": "YACub2KLfe8mfmHPcUKtt6t2SMJOGPXnZbqhc3nX"
       }
     },
     "GET":{
       "header":{
-        "Authentication":["xxx"]
+        "Authentication":["\\w{1,2}"]
+      },
+      "query":{
+        "id":["\\d{1,2}"]
       },
       "req":{
         "key1": "value1",
