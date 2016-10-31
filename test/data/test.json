@@ -14,7 +14,7 @@
     },
     "GET":{
       "header":{
-        "Authentication":["\\w{1,2}"]
+        "Authentication":"\\w{1,2}"
       },
       "query":{
         "id":["\\d{1,2}"]

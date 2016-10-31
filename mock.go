@@ -91,15 +91,19 @@ func (f *httpHandler) MockAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	end := new(EndPoint)
+	end := &EndPoint{}
 	err = json.Unmarshal(data, end)
 	if err != nil {
+		fmt.Println("err:", err)
 		w.Write([]byte(err.Error()))
+		return
 	}
 
 	context, ok := end.Method[method]
 	if !ok {
-		w.Write([]byte("方法不存在"))
+		w.WriteHeader(404)
+		data, _ := readFile(f.dir + "404.json")
+		w.Write(data)
 		return
 	}
 
@@ -124,17 +128,15 @@ func (f *httpHandler) MockAPI(w http.ResponseWriter, r *http.Request) {
 	writeResp(w, context.RespHeader, context.Resp)
 }
 
-func checkHeader(r *http.Request, rules map[string][]string) error {
+func checkHeader(r *http.Request, rules map[string]string) error {
 	headers := r.Header
 	for k, rule := range rules {
-		vLen := len(rule)
 		hkLen := len(headers[k])
-		for i := 0; i < vLen; i++ {
-			if rule[i] != "" && i >= hkLen {
-				return errors.New("缺少 headers: " + k + "[" + fmt.Sprint(i) + "]")
-			}
-
-			reg := regexp.MustCompile("^" + rule[i] + "$")
+		if rule != "" && hkLen < 1 {
+			return errors.New("缺少 headers: " + k)
+		}
+		for i := 0; i < hkLen; i++ {
+			reg := regexp.MustCompile("^" + rule + "$")
 			ok := reg.Match([]byte(headers[k][i]))
 			if !ok {
 				return errors.New("headers: " + k + "[" + fmt.Sprint(i) + "]无法通过校验" /*,规则 -> regexp[" + "^" + rule[i] + "$" + "]"*/)
@@ -144,17 +146,16 @@ func checkHeader(r *http.Request, rules map[string][]string) error {
 	return nil
 }
 
-func checkQuery(r *http.Request, rules map[string][]string) error {
+func checkQuery(r *http.Request, rules map[string]string) error {
 	querys := r.URL.Query()
 	for k, rule := range rules {
 		vLen := len(rule)
 		hkLen := len(querys[k])
+		if rule != "" && hkLen < 1 {
+			return errors.New("缺少 headers: " + k)
+		}
 		for i := 0; i < vLen; i++ {
-			if rule[i] != "" && i >= hkLen {
-				return errors.New("缺少 url.querys: " + k + "[" + fmt.Sprint(i) + "]")
-			}
-
-			reg := regexp.MustCompile("^" + rule[i] + "$")
+			reg := regexp.MustCompile("^" + rule + "$")
 			ok := reg.Match([]byte(querys[k][i]))
 			if !ok {
 				return errors.New("url.querys: " + k + "[" + fmt.Sprint(i) + "]无法通过校验" /*,规则 -> regexp[" + "^" + rule[i] + "$" + "]"*/)
@@ -165,6 +166,9 @@ func checkQuery(r *http.Request, rules map[string][]string) error {
 }
 
 func checkReq(r *http.Request, rules interface{}) error {
+	if rules == nil {
+		return nil
+	}
 	buf, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		return err
@@ -189,7 +193,7 @@ func checkReq(r *http.Request, rules interface{}) error {
 		rule := rules.(string)
 		index := strings.Index(rule, "|")
 		if index == -1 {
-			return errors.New("规则定义出错")
+			return errors.New("规则" + rule + "定义出错")
 		}
 		reg := regexp.MustCompile("^" + string(rule[:index]) + "$")
 		ok := reg.Match(buf)
@@ -219,7 +223,7 @@ func compareStruct(body map[string]interface{}, rules map[string]interface{}, pa
 			rule := v.(string)
 			index := strings.Index(rule, "|")
 			if index == -1 {
-				return errors.New("规则定义出错")
+				return errors.New("规则" + rule + "定义出错")
 			}
 			reg := regexp.MustCompile("^" + rule[index+1:] + "$")
 			ok := reg.Match([]byte(fmt.Sprint(body[k])))
@@ -298,14 +302,14 @@ func readFile(path string) ([]byte, error) {
 
 // EndPoint 接口后端
 type EndPoint struct {
-	Method map[string]EndContext
+	Method map[string]EndContext `json:"Method"`
 }
 
 // EndContext 接口请求内容
 type EndContext struct {
-	Header     map[string][]string
+	Header     map[string]string
+	Query      map[string]string
 	RespHeader map[string][]string `json:"resp_header"`
-	Query      map[string][]string
 	Req        interface{}
 	Resp       interface{}
 }
@@ -332,9 +336,4 @@ func getType(data interface{}) string {
 	default:
 		return "string"
 	}
-}
-
-// 检查参数的规则
-func checkRuleRegex() {
-
 }
